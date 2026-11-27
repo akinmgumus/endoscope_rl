@@ -25,22 +25,25 @@ def get_env_class(dim: int):
     raise ValueError(f"dim must be 2 or 3, got {dim}")
 
 
-def make_pursuit(env):
-    """Hand-made controller, not RL: turn toward the 2nd point ahead.
+def make_pursuit(env, k: int = 2):
+    """Hand-made controller, not RL: turn toward the k-th point ahead.
 
     Input : env (2D or 3D). The action size tells which one.
+            k, which point ahead to aim at (1 ... n_ahead). Default 2.
     Output: a policy function, obs -> action
     """
     if env.action_space.shape[0] == 1:            # 2D
+        j = 2 + 2 * (k - 1)                       # points start at obs[2], 2 numbers each
         def pursuit_policy(obs):
-            # obs[4:6] = 2nd point ahead in tip frame (x forward, y left)
-            lx, ly = obs[4], obs[5]
+            # obs[j:j+2] = k-th point ahead in tip frame (x forward, y left)
+            lx, ly = obs[j], obs[j + 1]
             angle = np.arctan2(ly, lx)
             return np.array([np.clip(angle / env.max_turn, -1, 1)], dtype=np.float32)
     else:                                         # 3D
+        j = 4 + 3 * (k - 1)                       # points start at obs[4], 3 numbers each
         def pursuit_policy(obs):
-            # obs[7:10] = 2nd point ahead in tip frame (forward, left, up)
-            lx, ly, lz = obs[7], obs[8], obs[9]
+            # obs[j:j+3] = k-th point ahead in tip frame (forward, left, up)
+            lx, ly, lz = obs[j], obs[j + 1], obs[j + 2]
             yaw = np.arctan2(ly, lx)
             pitch = np.arctan2(lz, np.hypot(lx, ly))
             a = np.array([yaw, pitch]) / env.max_turn

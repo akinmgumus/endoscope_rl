@@ -127,13 +127,77 @@ and gives a strong reference for PPO.
 
 ![PPO agent, 3D](assets/ppo3d_300k.gif)
 
+## Robustness test
+
+The trained 300k models are tested, **without retraining**, in conditions
+they never saw in training (`hard_test.py`, 300 test tubes per condition).
+
+Training: curviness c in [0, 0.08], width 0.5, tip turn up to 10° per step,
+exact observations.
+
+| Condition  | What changes |
+|------------|--------------|
+| train      | nothing (reference) |
+| sharp tube | c in [0.08, 0.16], width 0.30. Some bends are sharper than the tip can turn (up to about 13° per step). |
+| weak tip   | c in [0.08, 0.16], tip turn only up to 6° per step |
+| noise s    | Gaussian noise with standard deviation s added to every observation number |
+
+Two hand-made baselines:
+
+- **pursuit-2** aims at the 2nd point ahead (0.10 ahead). This is the pursuit policy above.
+- **pursuit-5** aims at the 5th point ahead (0.25 ahead). Looking farther ahead
+  averages out more noise, so it is a stronger baseline.
+
+**Goal rate (%)**
+
+| Condition   | 2D PPO | 2D pursuit-2 | 2D pursuit-5 | 3D PPO | 3D pursuit-2 | 3D pursuit-5 |
+|-------------|--------|--------------|--------------|--------|--------------|--------------|
+| train       | 100    | 100          | 100          | 100    | 100          | 100          |
+| sharp tube  | 97.3   | 98.3         | **99.7**     | 100    | 100          | 100          |
+| weak tip    | 84.7   | 78.3         | **96.7**     | 100    | 99.7         | 100          |
+| noise 0.1   | **100**| 67.3         | **100**      | **100**| 46.0         | **100**      |
+| noise 0.2   | **100**| 1.3          | 68.7         | **100**| 0.7          | 50.3         |
+| noise 0.3   | **99.0**| 0.0         | 12.0         | **100**| 0.0          | 1.0          |
+
+`hard_test.py` also prints the crash rate, progress and return,
+and writes the full tables to `results_hard/`.
+
+**Paths with observation noise s = 0.2 (2D):** PPO in green, pursuit-2 in orange, pursuit-5 in purple.
+
+![Paths with noise 0.2](assets/robustness_noise_2d.png)
+
+**Findings**
+
+- **Observation noise:** PPO was never trained with noise, but it reaches the goal
+  in at least 99 % of the tubes up to s = 0.3. Both pursuit controllers fail.
+  Pursuit uses one point, so the noise on that point goes straight into the action.
+  The PPO policy uses all 12 (2D) or 19 (3D) numbers. These numbers carry
+  the same information several times, so the effect of the noise becomes smaller.
+- **Weak tip (2D):** pursuit-5 is better than PPO. PPO was trained with a tip
+  that turns 10° per step, so it starts turning too late when the tip is weaker.
+  Looking farther ahead starts the turn earlier.
+- **3D is easier in these two conditions:** the turn is split over two axes.
+  With 6° per axis, the combined turn is up to about 8.5° per step,
+  and the bends of the tube are also split over two axes.
+
+**Limits of this test**
+
+- The noise model is simple: the same std, independent for every number and every step.
+  A real sensor does not behave like this.
+- A hand-made controller with a filter (for example a Kalman filter on the
+  centerline points) could also be robust to noise. The point here is that
+  PPO learned to combine its inputs without being told how.
+
 ## Discussion
 
 - PPO matches the hand-made pursuit controller on unseen tubes, in 2D and in 3D.
   With a perfect centerline observation, the task is easy enough
   for a simple geometric controller.
+- With noisy observations, PPO is clearly more robust than pursuit.
+  With a weaker tip than in training, a pursuit controller that looks farther ahead
+  is better than PPO.
 - These stages check the full pipeline: tube generator, environment,
-  baselines, training and evaluation.
+  baselines, training, evaluation and robustness testing.
 - RL becomes useful where a hand-made controller is hard to write:
   a camera image as the observation, variable speed, or physical
   contact between a bendable endoscope and the wall.
@@ -146,6 +210,7 @@ and gives a strong reference for PPO.
 - `check_env.py`: Gymnasium API check and baseline policies
 - `train.py`: PPO training (Stable-Baselines3, CPU), TensorBoard logs
 - `evaluate.py`: test on unseen tubes, path plots, GIF
+- `hard_test.py`: robustness test (sharp tubes, weak tip, observation noise)
 
 `check_env.py`, `train.py` and `evaluate.py` take `--dim 2` (default) or `--dim 3`.
 
@@ -177,6 +242,12 @@ uv run python train.py --dim 3 --steps 300000 --name ppo3d_300k
 uv run python evaluate.py --dim 3 --model models/ppo3d_300k/best_model.zip --out results3d_300k
 ```
 
+Robustness test (needs both 300k models):
+
+```
+uv run python hard_test.py
+```
+
 Learning curves:
 
 ```
@@ -185,6 +256,7 @@ uv run tensorboard --logdir runs
 
 ## Next steps
 
-- Harder test: tubes more curved than in training
+- Kalman filter baseline: a hand-made controller with filtered observations
+- Train with observation noise and a range of tip turn limits
 - MuJoCo: real wall geometry, bendable endoscope, physical contact
 - Camera image as the observation (CNN)

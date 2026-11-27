@@ -56,6 +56,7 @@ class EndoscopeEnv3D(gym.Env):
         w_center: float = 0.1,
         crash_penalty: float = 10.0,
         goal_bonus: float = 10.0,
+        tube_kwargs: dict = None,     # extra Tube3D settings, e.g. width, curviness_range
         render_mode=None,
     ):
         self.n_ahead = n_ahead
@@ -66,6 +67,7 @@ class EndoscopeEnv3D(gym.Env):
         self.w_center = w_center
         self.crash_penalty = crash_penalty
         self.goal_bonus = goal_bonus
+        self.tube_kwargs = tube_kwargs or {}           # {} -> training defaults
         self.render_mode = render_mode
 
         # Action: [yaw, pitch], each in [-1, 1]
@@ -85,7 +87,7 @@ class EndoscopeEnv3D(gym.Env):
     # ------------------------------------------------------------------
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.tube = Tube3D(self.np_random)
+        self.tube = Tube3D(self.np_random, **self.tube_kwargs)
 
         self.pos = self.tube.centerline[0].copy()      # q, (3,)
         self.R = np.eye(3)                             # facing +x, left = +y, up = +z

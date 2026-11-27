@@ -37,6 +37,7 @@ class EndoscopeEnv(gym.Env):
         w_center: float = 0.1,        # penalty weight for distance from center
         crash_penalty: float = 10.0,  # penalty for hitting the wall
         goal_bonus: float = 10.0,     # bonus for reaching the end
+        tube_kwargs: dict = None,     # extra Tube settings, e.g. width, curviness_range
         render_mode=None,
     ):
         self.n_ahead = n_ahead
@@ -47,6 +48,7 @@ class EndoscopeEnv(gym.Env):
         self.w_center = w_center
         self.crash_penalty = crash_penalty
         self.goal_bonus = goal_bonus
+        self.tube_kwargs = tube_kwargs or {}         # {} -> training defaults
         self.render_mode = render_mode
 
         # Action: one number in [-1, 1]. step() scales it to [-max_turn, +max_turn].
@@ -66,7 +68,7 @@ class EndoscopeEnv(gym.Env):
     # ------------------------------------------------------------------
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)                       # creates self.np_random
-        self.tube = Tube(self.np_random)               # new tube every episode
+        self.tube = Tube(self.np_random, **self.tube_kwargs)   # new tube every episode
 
         self.pos = self.tube.centerline[0].copy()      # q, (2,)
         self.heading = 0.0                             # h, start in +x direction
