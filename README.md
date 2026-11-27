@@ -131,5 +131,3 @@ uv run python evaluate.py --model models/ppo_300k/best_model.zip --out results_3
 - Harder test: tubes more curved than in training
 - MuJoCo: real wall geometry, bendable endoscope, physical contact
 - Camera image as the observation (CNN)
-
-Author: Akin Mert Gümüs
