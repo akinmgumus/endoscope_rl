@@ -1,6 +1,7 @@
 """
-train.py — Train PPO on EndoscopeEnv (CPU).
-Run : python train.py --steps 500000
+train.py — Train PPO on the endoscope environment (CPU).
+Run : python train.py --steps 300000 --name ppo_300k            (2D)
+      python train.py --dim 3 --steps 300000 --name ppo3d_300k  (3D)
 Logs: tensorboard --logdir runs
 """
 
@@ -12,26 +13,33 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback
 
-from endoscope_env import EndoscopeEnv
+from check_env import get_env_class
 
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--dim", type=int, default=2, choices=[2, 3])
     parser.add_argument("--steps", type=int, default=500_000)
     parser.add_argument("--n-envs", type=int, default=8)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--name", type=str, default="ppo_endoscope")
+    parser.add_argument("--name", type=str, default=None)
     args = parser.parse_args()
+
+    # Default run name depends on the dimension
+    if args.name is None:
+        args.name = "ppo_endoscope" if args.dim == 2 else "ppo3d_endoscope"
 
     torch.set_num_threads(1)                      # small MLP: 1 thread is fastest
 
     models_dir = Path("models") / args.name
     models_dir.mkdir(parents=True, exist_ok=True)
 
+    env_class = get_env_class(args.dim)
+
     # 8 environments run side by side -> more data per update
-    train_env = make_vec_env(EndoscopeEnv, n_envs=args.n_envs, seed=args.seed)
+    train_env = make_vec_env(env_class, n_envs=args.n_envs, seed=args.seed)
     # separate environment for evaluation, different tubes
-    eval_env = make_vec_env(EndoscopeEnv, n_envs=1, seed=args.seed + 10_000)
+    eval_env = make_vec_env(env_class, n_envs=1, seed=args.seed + 10_000)
 
     eval_cb = EvalCallback(
         eval_env,
