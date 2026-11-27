@@ -2,6 +2,7 @@
 
 A PPO agent steers an endoscope tip through random curved tubes
 (a simplified colon model) without touching the wall, in 2D and in 3D.
+A first physics-based version in MuJoCo uses a bendable endoscope with wall contact.
 Every episode uses a new random tube, so the agent cannot memorize one path.
 
 | 2D | 3D |
@@ -188,6 +189,69 @@ and writes the full tables to `results_hard/`.
   centerline points) could also be robust to noise. The point here is that
   PPO learned to combine its inputs without being told how.
 
+## MuJoCo version (first results)
+
+The 2D/3D versions move the tip with a formula. This version simulates
+a bendable endoscope with physical wall contact in [MuJoCo](https://mujoco.org).
+
+![PPO agent in MuJoCo](assets/mujoco_ppo.gif)
+
+**Model** (`mujoco_model.py`)
+
+- **Tube:** a random 3D tube (length 3, radius 0.25). The wall is a cage of
+  480 small capsules, because MuJoCo cannot collide with a hollow tube as one shape.
+- **Endoscope:** a chain of 34 capsule links. Each link joins the previous one
+  with two hinge joints (yaw, pitch).
+  - Body joints are passive, with a spring and damping. The body slides along the wall.
+  - The last 3 links (red) form the bending section, driven by position actuators.
+  - The base is pushed at constant speed (insertion), as in a real endoscope.
+- Gravity is off: the endoscope floats in the lumen.
+
+**Task** (`endoscope_mujoco_env.py`)
+
+- **Action:** yaw and pitch target of the bending section, each in [-1, 1] (max 0.5 rad per joint).
+- **Observation (23 numbers):** the 19 numbers of the 3D version (tip frame),
+  the bending angles (2), and the tip and body contact forces (2).
+- **Reward:** progress, a strong penalty for the tip contact force,
+  a weak penalty for the body contact force, and a small penalty for distance from the center.
+- Touching the wall does not end the episode. The episode ends at the end of the tube
+  or after 250 steps.
+
+Why the reward focuses on the tip: even without any bending, the pushed endoscope
+slides along the wall and reaches the end. Most of the contact force comes from the body,
+and steering the tip hardly changes it. The tip contact force is what steering can change,
+and the tip is where a real endoscope can perforate the wall.
+
+**Results** (PPO 300k steps, best checkpoint, 100 test tubes; all policies reach the end)
+
+| Policy     | Tip contact (% of steps) | Tip mean force | Tip max force | Body mean force | Return |
+|------------|--------------------------|----------------|---------------|-----------------|--------|
+| Straight   | 44.6 %                   | 0.260          | 2.67          | 0.426           | −39.67 |
+| Pursuit-2  | **6.8 %**                | **0.198**      | 5.71          | 0.432           | **−19.86** |
+| Pursuit-5  | 9.2 %                    | 0.205          | 5.23          | 0.439           | −22.89 |
+| PPO        | 15.1 %                   | 0.222          | **3.22**      | 0.444           | −28.86 |
+
+Pursuit here adds the angle to the target point to the current bending angle,
+because the action sets the bending relative to the body.
+
+![Tip paths in MuJoCo](assets/mujoco_paths.png)
+
+**Findings**
+
+- PPO learns to steer: tip contact drops from 44.6 % (no bending) to 15.1 %.
+  After 100k steps it was about 23 %, so longer training still helps.
+- Pursuit is better on tip contact, mean tip force and return.
+- The two policies touch the wall in different ways. Pursuit touches rarely but hard
+  (about 2.9 mean force per contact step); PPO touches more often but softly (about 1.5).
+  PPO also has a lower peak force, which matters for perforation risk.
+- The body contact force is the same for every policy (about 0.43):
+  steering the tip does not change how the pushed body touches the wall.
+
+**Limits**
+
+- Rigid wall, simple bending model (no tendons), no gravity, and arbitrary units.
+- One training run (300k steps, one seed).
+
 ## Discussion
 
 - PPO matches the hand-made pursuit controller on unseen tubes, in 2D and in 3D.
@@ -198,9 +262,12 @@ and writes the full tables to `results_hard/`.
   is better than PPO.
 - These stages check the full pipeline: tube generator, environment,
   baselines, training, evaluation and robustness testing.
+- In the MuJoCo version with physical contact, PPO learns to reduce tip contact,
+  but the hand-made pursuit rule is still better after 300k steps.
+  PPO touches the wall more often but with lower peak force.
 - RL becomes useful where a hand-made controller is hard to write:
-  a camera image as the observation, variable speed, or physical
-  contact between a bendable endoscope and the wall.
+  a camera image as the observation, variable speed, or complex
+  contact between a bendable endoscope and a soft wall.
 
 ## Files
 
@@ -211,6 +278,10 @@ and writes the full tables to `results_hard/`.
 - `train.py`: PPO training (Stable-Baselines3, CPU), TensorBoard logs
 - `evaluate.py`: test on unseen tubes, path plots, GIF
 - `hard_test.py`: robustness test (sharp tubes, weak tip, observation noise)
+- `mujoco_model.py`: builds the MuJoCo model (tube wall cage, endoscope chain)
+- `endoscope_mujoco_env.py`: Gymnasium environment with MuJoCo physics, pursuit and straight baselines
+- `train_mujoco.py`, `evaluate_mujoco.py`: PPO training (parallel processes) and evaluation
+- `watch_mujoco.py`: watch a policy live in the MuJoCo viewer
 
 `check_env.py`, `train.py` and `evaluate.py` take `--dim 2` (default) or `--dim 3`.
 
@@ -242,6 +313,15 @@ uv run python train.py --dim 3 --steps 300000 --name ppo3d_300k
 uv run python evaluate.py --dim 3 --model models/ppo3d_300k/best_model.zip --out results3d_300k
 ```
 
+MuJoCo:
+
+```
+uv run python mujoco_model.py --view                      # physics only, straight push
+uv run python train_mujoco.py --steps 300000 --name ppo_mujoco_300k
+uv run python evaluate_mujoco.py --model models/ppo_mujoco_300k/best_model.zip --out results_mujoco_300k
+uv run python watch_mujoco.py --model models/ppo_mujoco_300k/best_model.zip
+```
+
 Robustness test (needs both 300k models):
 
 ```
@@ -256,7 +336,8 @@ uv run tensorboard --logdir runs
 
 ## Next steps
 
+- MuJoCo: residual RL (PPO learns a correction on top of pursuit), longer training, more seeds
+- MuJoCo: soft wall, tendon-driven bending section
 - Kalman filter baseline: a hand-made controller with filtered observations
 - Train with observation noise and a range of tip turn limits
-- MuJoCo: real wall geometry, bendable endoscope, physical contact
 - Camera image as the observation (CNN)
