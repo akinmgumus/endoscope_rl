@@ -125,6 +125,8 @@ and gives a strong reference for PPO.
 
 ![Paths, 3D](assets/paths3d_300k.png)
 
+![PPO agent, 3D](assets/ppo3d_300k.gif)
+
 ## Discussion
 
 - PPO matches the hand-made pursuit controller on unseen tubes, in 2D and in 3D.
